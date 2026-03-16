@@ -26,7 +26,7 @@
         "__id__": 23
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [],
     "_prefab": null,
     "_opacity": 255,
@@ -1630,9 +1630,10 @@
     },
     "_enabled": true,
     "tilePrefab": null,
-    "tileSpriteFrame": {
-      "__uuid__": "1240f781-2d34-4552-bb32-39a42f689f7e"
+    "bombTilePrefab": {
+      "__uuid__": "52b66ebe-7e0b-43b2-bfdf-43bac0adcf91"
     },
+    "tileSpriteFrame": null,
     "ordinaryFrames": [],
     "bombFrame": {
       "__uuid__": "3322de2d-7bd8-4a2f-be7b-1c85e2f8f23c"
@@ -1657,22 +1658,14 @@
         "__uuid__": "3d915230-9dee-49f6-a31b-c82801b067c8"
       },
       {
-        "__uuid__": "3322de2d-7bd8-4a2f-be7b-1c85e2f8f23c"
-      },
-      {
-        "__uuid__": "4f9bece3-9fd3-4ab2-9c06-2d42a19c093d"
-      },
-      {
-        "__uuid__": "625c0cb9-a314-479e-9d3d-961a48e1024e"
-      },
-      {
-        "__uuid__": "70b5806e-b862-466b-ac07-1d15283c8fda"
+        "__uuid__": "389e1cf9-16c8-452d-9b2a-0bff9f29fb38"
       }
     ],
     "tileSize": 64,
     "spacing": 4,
     "bombIdleInterval": 2,
     "bombIdleAnimDuration": 0.32,
+    "burnAnimDuration": 0.28,
     "_id": "64DbXfJ4dBiKzLZRjzkTcv"
   },
   {

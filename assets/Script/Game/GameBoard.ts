@@ -99,6 +99,28 @@ export class GameBoard {
     }
 
     /**
+     * Связная группа прилегающих тайлов-бомб (значения 5–8) по горизонтали и вертикали.
+     */
+    getConnectedBombGroup(row: number, col: number): Cell[] {
+        const v = this.getAt(row, col);
+        if (v < GameConfig.TILE_ROCKET_H || v > GameConfig.TILE_BOMB_MAX) return [];
+        const group: Cell[] = [];
+        const visited = new Set<string>();
+        const key = (r: number, c: number) => `${r},${c}`;
+        const dfs = (r: number, c: number) => {
+            const cellVal = this.getAt(r, c);
+            if (cellVal < GameConfig.TILE_ROCKET_H || cellVal > GameConfig.TILE_BOMB_MAX) return;
+            const k = key(r, c);
+            if (visited.has(k)) return;
+            visited.add(k);
+            group.push([r, c]);
+            for (const [nr, nc] of this.getNeighbors(r, c)) dfs(nr, nc);
+        };
+        dfs(row, col);
+        return group;
+    }
+
+    /**
      * При клике сгорают только соседние тайлы того же цвета (до 4 по вертикали/горизонтали + сам тайл), не вся связная группа.
      */
     getNeighborGroupSameColor(row: number, col: number): Cell[] {
@@ -153,6 +175,27 @@ export class GameBoard {
                 if (r >= 0 && r < this.rows && c >= 0 && c < this.cols) out.push([r, c]);
             }
         return out;
+    }
+
+    /** Объединение зон «радиус R» вокруг каждой клетки группы (для группы только бомб 7–8). */
+    getCellsInRadiusAroundGroup(group: Cell[], radius: number = GameConfig.BOMB_RADIUS): Cell[] {
+        const set = new Set<string>();
+        const key = (r: number, c: number) => `${r},${c}`;
+        for (const [r, c] of group) {
+            for (const cell of this.getBombEffectCells(r, c, radius)) set.add(key(cell[0], cell[1]));
+        }
+        return Array.from(set).map(s => { const [r, c] = s.split(',').map(Number); return [r, c] as Cell; });
+    }
+
+    /** Объединение эффектов группы бомб (5–8): ракета — ряд/столбец, бомба — радиус; каждая по своей логике. */
+    getUnionEffectCellsForBombGroup(group: Cell[]): Cell[] {
+        const set = new Set<string>();
+        const key = (r: number, c: number) => `${r},${c}`;
+        for (const [r, c] of group) {
+            const effect = this.getSpecialEffectCells(r, c);
+            for (const cell of effect) set.add(key(cell[0], cell[1]));
+        }
+        return Array.from(set).map(s => { const [r, c] = s.split(',').map(Number); return [r, c] as Cell; });
     }
 
     /** Добавить к множеству ячеек зоны от спецтайлов в этих ячейках (ракеты, бомбы, очистить всё). Не меняет сетку. */

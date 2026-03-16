@@ -17,6 +17,10 @@ export default class BoardView extends cc.Component {
     @property(cc.Prefab)
     tilePrefab: cc.Prefab = null;
 
+    /** Отдельный префаб для тайлов-бомб (ракета Г/В, бомба, бомба-макс). Если задан — для значений 5–8 создаётся он вместо tilePrefab. */
+    @property(cc.Prefab)
+    bombTilePrefab: cc.Prefab = null;
+
     @property(cc.SpriteFrame)
     tileSpriteFrame: cc.SpriteFrame = null;
 
@@ -58,10 +62,16 @@ export default class BoardView extends cc.Component {
     @property({ tooltip: 'Длительность одного пульса (сек)' })
     bombIdleAnimDuration: number = 0.35;
 
+    /** Длительность анимации исчезновения/взрыва тайла при сжигании (сек). По умолчанию 0.28. */
+    @property({ tooltip: 'Длительность анимации взрыва/исчезновения тайла (сек)' })
+    burnAnimDuration: number = 0.28;
+
     private board: GameBoard = null;
     private tileNodes: cc.Node[][] = [];
     private tileViews: TileView[][] = [];
     private onClick: TileClickCallback = null;
+    /** Последний снимок сетки для анимации появления/падения тайлов */
+    private lastGridSnapshot: number[][] | null = null;
 
     /** Привязать к модели поля и установить обработчик клика */
     bind(board: GameBoard, onTileClick: TileClickCallback): void {
@@ -153,33 +163,37 @@ export default class BoardView extends cc.Component {
     }
 
     private createTileNode(row: number, col: number): cc.Node {
+        const value = this.board.getAt(row, col);
+        const useBombPrefab = isBombIdleType(value) && this.bombTilePrefab;
         let node: cc.Node;
-        if (this.tilePrefab) {
+        if (useBombPrefab) {
+            node = cc.instantiate(this.bombTilePrefab);
+        } else if (this.tilePrefab) {
             node = cc.instantiate(this.tilePrefab);
         } else {
             node = new cc.Node('Tile');
             node.setContentSize(this.tileSize, this.tileSize);
             const sprite = node.addComponent(cc.Sprite);
-            const frame = this.getFrameForValue(this.board.getAt(row, col)) || this.getAnyTileFrame();
+            const frame = this.getFrameForValue(value) || this.getAnyTileFrame();
             if (frame) {
                 sprite.spriteFrame = frame;
                 sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
             } else {
                 const g = node.addComponent(cc.Graphics);
                 g.rect(-this.tileSize / 2, -this.tileSize / 2, this.tileSize, this.tileSize);
-                g.fillColor = this.getColorForValue(this.board.getAt(row, col));
+                g.fillColor = this.getColorForValue(value);
                 g.fill();
             }
             const tv = node.addComponent(TileView);
             (tv as any).sprite = sprite;
         }
         node.setContentSize(this.tileSize, this.tileSize);
-        const value = this.board.getAt(row, col);
         const tv = node.getComponent(TileView) || node.addComponent(TileView);
         if (!tv.sprite && node.getComponent(cc.Sprite)) (tv as any).sprite = node.getComponent(cc.Sprite);
         tv.init(row, col, value, (r, c) => this.onClick && this.onClick(r, c));
         const frame = this.getFrameForValue(value) || this.getAnyTileFrame();
-        const color = value >= 0 && value <= 4 ? this.getColorForValue(value) : undefined;
+        // Обычные тайлы (0–4): без тинта — цвет берётся из спрайта, иначе затемнение (синий, красный и т.д.)
+        const color = value >= 0 && value <= 4 ? cc.color(255, 255, 255) : undefined;
         tv.setDisplay(value, frame, color);
         if (isBombIdleType(value)) tv.setBombIdle(this.bombIdleInterval, this.bombIdleAnimDuration);
         else tv.stopBombIdle();
@@ -202,6 +216,7 @@ export default class BoardView extends cc.Component {
     /** Обновить отображение по текущему состоянию поля */
     refresh(): void {
         if (!this.board) return;
+        const snapshot = this.board.getGridSnapshot();
         const rows = this.board.getRows();
         const cols = this.board.getCols();
         for (let r = 0; r < rows; r++) {
@@ -209,14 +224,76 @@ export default class BoardView extends cc.Component {
                 const view = this.tileViews[r] && this.tileViews[r][c];
                 if (view) {
                     const value = this.board.getAt(r, c);
+                    view.node.active = value >= 0;
+                    if (value < 0) continue;
+                    view.node.scale = 1;
+                    view.node.opacity = 255;
                     const frame = this.getFrameForValue(value);
-                    const color = value >= 0 && value <= 4 ? this.getColorForValue(value) : undefined;
+                    const color = value >= 0 && value <= 4 ? cc.color(255, 255, 255) : undefined;
                     view.setDisplay(value, frame, color);
                     if (isBombIdleType(value)) view.setBombIdle(this.bombIdleInterval, this.bombIdleAnimDuration);
                     else view.stopBombIdle();
+
+                    // Плавное появление/«падение» тайлов: если значение изменилось или была пустота, слегка масштабируем с ease-out
+                    if (this.lastGridSnapshot) {
+                        const prev = this.lastGridSnapshot[r][c];
+                        if (prev !== value && value >= 0 && view.node && view.node.isValid) {
+                            const n = view.node;
+                            n.stopAllActions();
+                            n.scale = 0.7;
+                            n.runAction(cc.scaleTo(0.12, 1).easing(cc.easeBackOut()));
+                        }
+                    }
                 }
             }
         }
+        this.lastGridSnapshot = snapshot;
+    }
+
+    /**
+     * Анимация исчезновения/взрыва для сжигаемых тайлов: лёгкое увеличение, затем масштаб вверх + затухание.
+     * После завершения вызывается onComplete (обычно гравитация и дозаполнение).
+     */
+    playBurnAnimation(cells: Cell[], onComplete: () => void): void {
+        if (!cells || cells.length === 0) {
+            if (onComplete) onComplete();
+            return;
+        }
+        const d = this.burnAnimDuration > 0 ? this.burnAnimDuration : 0.28;
+        const t1 = d * 0.4;
+        const t2 = d * 0.6;
+        const key = (r: number, c: number) => `${r},${c}`;
+        const seen = new Set<string>();
+        for (const [r, c] of cells) {
+            const k = key(r, c);
+            if (seen.has(k)) continue;
+            seen.add(k);
+            const node = this.tileNodes[r] && this.tileNodes[r][c];
+            const view = this.tileViews[r] && this.tileViews[r][c];
+            if (!node || !node.isValid) continue;
+            if (view && typeof view.stopBombIdle === 'function') view.stopBombIdle();
+            node.stopAllActions();
+            node.opacity = 255;
+            node.runAction(cc.sequence(
+                cc.spawn(
+                    cc.scaleTo(t1, 1.35).easing(cc.easeBackOut()),
+                    cc.delayTime(t1)
+                ),
+                cc.spawn(
+                    cc.scaleTo(t2, 1.75),
+                    cc.fadeOut(t2)
+                ),
+                cc.callFunc(() => {
+                    if (node && node.isValid) {
+                        node.scale = 1;
+                        node.opacity = 255;
+                    }
+                })
+            ));
+        }
+        this.scheduleOnce(() => {
+            if (onComplete) onComplete();
+        }, d);
     }
 
     /** Подсветить ячейки (или сбросить подсветку: cells=[], highlight=false — все в 255). */

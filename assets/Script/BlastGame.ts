@@ -136,9 +136,8 @@ export default class BlastGame extends cc.Component {
             const count = this.board.burnCells(cells);
             this.state.addScore(count * GameConfig.scorePerTile);
             this.boosterMode = 'none';
-            this.boardView.refresh();
             if (this.gameUI) this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
-            this.scheduleOnce(() => this.applyGravityAndRefill(), 0.2);
+            this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill());
             return;
         }
 
@@ -152,18 +151,30 @@ export default class BlastGame extends cc.Component {
                 this.boardView.refresh();
                 return;
             }
-            this.board.swap(this.selectedForSwap[0], this.selectedForSwap[1], row, col);
-            if (this.teleportSource === 'tile') this.state.useMove();
-            this.selectedForSwap = null;
-            this.boosterMode = 'none';
-            this.teleportSource = null;
-            this.boardView.highlightCells([], false);
-            this.boardView.refresh();
-            if (this.gameUI) {
-                this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
-                this.gameUI.setMoves(this.state.movesLeft);
+            // Клик по «действующему» тайлу (бомба, ракета, очистить всё или группа 2+) — сбрасываем выбор телепорта и обрабатываем как обычный клик
+            const isActionTile = (value >= GameConfig.TILE_ROCKET_H && value <= GameConfig.TILE_CLEAR_ALL) ||
+                (value >= 0 && value <= 4 && this.board.getConnectedGroup(row, col).length >= GameConfig.MIN_GROUP_SIZE);
+            if (isActionTile) {
+                this.selectedForSwap = null;
+                this.boosterMode = 'none';
+                this.teleportSource = null;
+                this.boardView.highlightCells([], false);
+                this.boardView.refresh();
+                // Не return — дальше обработается как клик по ракете/бомбе/обычной группе
+            } else {
+                this.board.swap(this.selectedForSwap[0], this.selectedForSwap[1], row, col);
+                if (this.teleportSource === 'tile') this.state.useMove();
+                this.selectedForSwap = null;
+                this.boosterMode = 'none';
+                this.teleportSource = null;
+                this.boardView.highlightCells([], false);
+                this.boardView.refresh();
+                if (this.gameUI) {
+                    this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
+                    this.gameUI.setMoves(this.state.movesLeft);
+                }
+                return;
             }
-            return;
         }
 
         // UI «Бустер телепорт»: первый клик по полю — выбор первой клетки (счётчик уже списан при клике по кнопке)
@@ -174,40 +185,75 @@ export default class BlastGame extends cc.Component {
         }
 
         // --- Спецтайлы на поле (бустеры в игровом поле): работают отдельно от кнопок «Бустеры» ---
-        // Телепорт-тайл на поле: выбор первой клетки, ход спишется при обмене
-        if (this.board.isTeleport(value)) {
+        // Телепорт-тайл на поле: теперь работает ТОЛЬКО если активен режим телепорта с кнопки.
+        // Без нажатия кнопки клик по такому тайлу обрабатывается как обычный (не запускает обмен).
+        if (this.board.isTeleport(value) && this.boosterMode === 'teleport' && this.teleportSource === 'ui') {
             this.selectedForSwap = [row, col];
             this.teleportSource = 'tile';
             this.boardView.highlightCells([[row, col]], true);
             return;
         }
 
+        // Горизонтальная/вертикальная ракета: ТОЛЬКО очищение ряда или столбца; попавшие в ряд бомбы срабатывают по своей логике (цепная реакция)
+        if (value === GameConfig.TILE_ROCKET_H || value === GameConfig.TILE_ROCKET_V) {
+            this.inputBlocked = true;
+            const initial = this.board.getSpecialEffectCells(row, col); // только строка или только столбец
+            const cells = this.board.getCellsWithChainReaction(initial);
+            const count = this.board.burnCells(cells);
+            this.state.addScore(count * GameConfig.scorePerTile);
+            this.state.useMove();
+            if (this.gameUI) {
+                this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
+                this.gameUI.setMoves(this.state.movesLeft);
+            }
+            this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill());
+            return;
+        }
+
+        // Обычная бомба и бомба-макс: одна клетка — радиус R; группа прилегающих бомб (5–8) — объединение эффектов (ракета → ряд/столбец, бомба → радиус)
+        if (value === GameConfig.TILE_BOMB || value === GameConfig.TILE_BOMB_MAX) {
+            this.inputBlocked = true;
+            const bombGroup = this.board.getConnectedBombGroup(row, col);
+            const R = value === GameConfig.TILE_BOMB_MAX ? GameConfig.BOMB_MAX_RADIUS : GameConfig.BOMB_RADIUS;
+            const initial = bombGroup.length >= 2
+                ? this.board.getUnionEffectCellsForBombGroup(bombGroup)
+                : this.board.getBombEffectCells(row, col, R);
+            const cells = this.board.getCellsWithChainReaction(initial);
+            const count = this.board.burnCells(cells);
+            this.state.addScore(count * GameConfig.scorePerTile);
+            this.state.useMove();
+            if (this.gameUI) {
+                this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
+                this.gameUI.setMoves(this.state.movesLeft);
+            }
+            this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill());
+            return;
+        }
+
         this.inputBlocked = true;
 
-        // Ракета/бомба/очистить всё на поле — эффект спецтайла с цепной реакцией, тратится ход
-        if (this.board.isSpecial(value)) {
+        // Очистить всё (TILE_CLEAR_ALL) — эффект с цепной реакцией
+        if (value === GameConfig.TILE_CLEAR_ALL) {
             const initial = this.board.getSpecialEffectCells(row, col);
             const cells = this.board.getCellsWithChainReaction(initial);
             const count = this.board.burnCells(cells);
             this.state.addScore(count * GameConfig.scorePerTile);
             this.state.useMove();
-            this.boardView.refresh();
             if (this.gameUI) {
                 this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
                 this.gameUI.setMoves(this.state.movesLeft);
             }
-            this.scheduleOnce(() => this.applyGravityAndRefill(), 0.2);
+            this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill());
             return;
         }
 
-        // При клике сгорает вся связная группа того же цвета (все прилегающие по горизонтали и вертикали)
+        // При клике сгорает вся связная группа того же цвета (прилегающие по горизонтали и вертикали)
         const group = this.board.getConnectedGroup(row, col);
         if (group.length < GameConfig.MIN_GROUP_SIZE) {
             if (this.boardView && group.length === 1) this.boardView.pulseTile(row, col);
             this.inputBlocked = false;
             return;
         }
-
         const count = this.board.burnCells(group);
         const n = group.length;
         let spawnType: number | null = null;
@@ -224,12 +270,11 @@ export default class BlastGame extends cc.Component {
         }
         this.state.addScore(count * GameConfig.scorePerTile);
         this.state.useMove();
-        this.boardView.refresh();
         if (this.gameUI) {
             this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
             this.gameUI.setMoves(this.state.movesLeft);
         }
-        this.scheduleOnce(() => this.applyGravityAndRefill(), 0.2);
+        this.boardView.playBurnAnimation(group, () => this.applyGravityAndRefill());
     }
 
     private applyGravityAndRefill(): void {
@@ -237,6 +282,9 @@ export default class BlastGame extends cc.Component {
         this.board.refill();
         this.boardView.refresh();
         this.inputBlocked = false;
+        this.selectedForSwap = null;
+        this.boosterMode = 'none';
+        this.teleportSource = null;
         this.checkWinLose();
     }
 
