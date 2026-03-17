@@ -581,7 +581,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 102.6,
+      "width": 151.92,
       "height": 50.4
     },
     "_anchorPoint": {
@@ -633,8 +633,8 @@
     ],
     "_srcBlendFactor": 770,
     "_dstBlendFactor": 771,
-    "_string": "Play",
-    "_N$string": "Play",
+    "_string": "Играть",
+    "_N$string": "Играть",
     "_fontSize": 40,
     "_lineHeight": 40,
     "_enableWrapText": true,
@@ -954,7 +954,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 178.72,
+      "width": 236.4,
       "height": 50.4
     },
     "_anchorPoint": {
@@ -966,7 +966,7 @@
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        55.859,
+        63.743,
         8.836,
         0,
         0,
@@ -1006,8 +1006,8 @@
     ],
     "_srcBlendFactor": 770,
     "_dstBlendFactor": 771,
-    "_string": "Options",
-    "_N$string": "Options",
+    "_string": "Настройки",
+    "_N$string": "Настройки",
     "_fontSize": 40,
     "_lineHeight": 40,
     "_enableWrapText": true,
@@ -1327,7 +1327,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 96.88,
+      "width": 166.16,
       "height": 50.4
     },
     "_anchorPoint": {
@@ -1339,7 +1339,7 @@
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        21.398,
+        30.409,
         8.836,
         0,
         0,
@@ -1379,8 +1379,8 @@
     ],
     "_srcBlendFactor": 770,
     "_dstBlendFactor": 771,
-    "_string": "Quit",
-    "_N$string": "Quit",
+    "_string": "Выход",
+    "_N$string": "Выход",
     "_fontSize": 40,
     "_lineHeight": 40,
     "_enableWrapText": true,

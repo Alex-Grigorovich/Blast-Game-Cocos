@@ -23,6 +23,14 @@ export default class BlastGame extends cc.Component {
     @property(cc.Node)
     boosterTeleportBtn: cc.Node = null;
 
+    /** Кнопка «РЕСТАРТ» в панели победы (ПОБЕДА!). Если одна кнопка в обеих панелях — можно указать её и там и там. */
+    @property(cc.Node)
+    winRestartBtn: cc.Node = null;
+
+    /** Кнопка «РЕСТАРТ» в панели поражения (ПРОИГРАЛ!). */
+    @property(cc.Node)
+    loseRestartBtn: cc.Node = null;
+
     /** Скорость изменения масштаба при наведении/уходе мыши с кнопок бустеров (сек). При наведении — 1.5, при уходе — 1. */
     @property({ tooltip: 'Длительность перехода масштаба (сек)' })
     boosterHoverPulseDuration: number = 0.15;
@@ -38,6 +46,7 @@ export default class BlastGame extends cc.Component {
     start(): void {
         this.startNewGame();
         this.registerBoosterButtons();
+        this.registerRestartButtons();
     }
 
     private runBoosterHoverEnter(node: cc.Node): void {
@@ -69,6 +78,21 @@ export default class BlastGame extends cc.Component {
         setup(this.boosterTeleportBtn, this.onBoosterTeleportClick);
     }
 
+    /** Подключить кнопки РЕСТАРТ в панелях победы и поражения — перезапуск игры. */
+    private registerRestartButtons(): void {
+        const onRestart = (): void => {
+            this.startNewGame();
+        };
+        const setup = (node: cc.Node): void => {
+            if (!node || !node.isValid) return;
+            if (node.getComponent(cc.Button) == null) node.addComponent(cc.Button);
+            node.off(cc.Node.EventType.TOUCH_END, onRestart, this);
+            node.on(cc.Node.EventType.TOUCH_END, onRestart, this);
+        };
+        setup(this.winRestartBtn);
+        setup(this.loseRestartBtn);
+    }
+
     startNewGame(): void {
         this.board = new GameBoard(GameConfig.ROWS, GameConfig.COLS, GameConfig.COLORS);
         this.state = new GameState(GameConfig.MAX_MOVES);
@@ -86,6 +110,8 @@ export default class BlastGame extends cc.Component {
         }
         if (this.boardView) {
             this.boardView.bind(this.board, (row, col) => this.onTileClick(row, col));
+            // После рестарта синхронизируем снапшот для анимаций, чтобы первый ход не выглядел как «перезагрузка» всей сцены
+            this.boardView.syncSnapshotWithBoard();
         }
         this.checkLoseIfNoMoves();
     }
@@ -137,7 +163,7 @@ export default class BlastGame extends cc.Component {
             this.state.addScore(count * GameConfig.scorePerTile);
             this.boosterMode = 'none';
             if (this.gameUI) this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
-            this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill());
+            this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill(), true);
             return;
         }
 
@@ -206,7 +232,7 @@ export default class BlastGame extends cc.Component {
                 this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
                 this.gameUI.setMoves(this.state.movesLeft);
             }
-            this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill());
+            this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill(), true);
             return;
         }
 
@@ -226,7 +252,7 @@ export default class BlastGame extends cc.Component {
                 this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
                 this.gameUI.setMoves(this.state.movesLeft);
             }
-            this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill());
+            this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill(), true);
             return;
         }
 

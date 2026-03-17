@@ -1,0 +1,38 @@
+{
+  "ver": "2.3.7",
+  "uuid": "737b5cf7-49d4-464b-ae73-ff23cf81072c",
+  "importer": "texture",
+  "type": "sprite",
+  "wrapMode": "clamp",
+  "filterMode": "bilinear",
+  "premultiplyAlpha": false,
+  "genMipmaps": false,
+  "packable": true,
+  "width": 1280,
+  "height": 256,
+  "platformSettings": {},
+  "subMetas": {
+    "vecteezy_animation-sprite-sheet-of-bomb-explosion-sequence_13224424": {
+      "ver": "1.0.6",
+      "uuid": "fffae983-b536-47f4-846a-288ee32aa044",
+      "importer": "sprite-frame",
+      "rawTextureUuid": "737b5cf7-49d4-464b-ae73-ff23cf81072c",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 7.5,
+      "trimX": 87,
+      "trimY": 49,
+      "width": 1106,
+      "height": 143,
+      "rawWidth": 1280,
+      "rawHeight": 256,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {}
+    }
+  }
+}

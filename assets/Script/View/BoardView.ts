@@ -66,6 +66,22 @@ export default class BoardView extends cc.Component {
     @property({ tooltip: 'Длительность анимации взрыва/исчезновения тайла (сек)' })
     burnAnimDuration: number = 0.28;
 
+    /** Префаб с анимацией Explosion.anim: создаётся на каждом исчезающем тайле (бомба, ракета, группа и т.д.). Узел должен иметь компонент Animation с клипом Explosion. */
+    @property(cc.Prefab)
+    explosionPrefab: cc.Prefab = null;
+
+    /** Длительность показа взрыва (сек), после чего узел удаляется. Если 0 — берётся из первого клипа анимации (например 0.37 для Explosion.anim). */
+    @property({ tooltip: 'Длительность отображения эффекта взрыва (0 = из клипа)' })
+    explosionDuration: number = 0;
+
+    /** Три анимации исчезновения обычных тайлов (при сжигании группы по цвету): на каждом тайле случайно выбирается одна из заданных. Префабы с компонентом Animation. */
+    @property([cc.Prefab])
+    disappearAnimPrefabs: cc.Prefab[] = [];
+
+    /** Длительность показа анимации исчезновения обычных тайлов (сек). Если 0 — 0.3. */
+    @property({ tooltip: 'Длительность анимации исчезновения обычных тайлов (0 = 0.3 с)' })
+    disappearAnimDuration: number = 0;
+
     private board: GameBoard = null;
     private tileNodes: cc.Node[][] = [];
     private tileViews: TileView[][] = [];
@@ -77,6 +93,8 @@ export default class BoardView extends cc.Component {
     bind(board: GameBoard, onTileClick: TileClickCallback): void {
         this.board = board;
         this.onClick = onTileClick;
+        // При новом поле сбрасываем снапшот, чтобы первая перерисовка не анимировала всё как «падение»
+        this.lastGridSnapshot = this.board ? this.board.getGridSnapshot() : null;
         const self = this;
         const doBuild = () => {
             if (!self.tileSpriteFrame && (!self.tileFrames || self.tileFrames.length === 0)) {
@@ -89,6 +107,11 @@ export default class BoardView extends cc.Component {
             }
         };
         this.scheduleOnce(doBuild, 0);
+    }
+
+    /** Синхронизировать внутренний снапшот с текущим состоянием поля (например, после полного рестарта игры). */
+    syncSnapshotWithBoard(): void {
+        this.lastGridSnapshot = this.board ? this.board.getGridSnapshot() : null;
     }
 
     private buildGrid(): void {
@@ -253,8 +276,9 @@ export default class BoardView extends cc.Component {
     /**
      * Анимация исчезновения/взрыва для сжигаемых тайлов: лёгкое увеличение, затем масштаб вверх + затухание.
      * После завершения вызывается onComplete (обычно гравитация и дозаполнение).
+     * @param playExplosion — если true, на каждом тайле воспроизводится Explosion.anim (только при сжигании от бомбы/ракет).
      */
-    playBurnAnimation(cells: Cell[], onComplete: () => void): void {
+    playBurnAnimation(cells: Cell[], onComplete: () => void, playExplosion: boolean = false): void {
         if (!cells || cells.length === 0) {
             if (onComplete) onComplete();
             return;
@@ -262,6 +286,8 @@ export default class BoardView extends cc.Component {
         const d = this.burnAnimDuration > 0 ? this.burnAnimDuration : 0.28;
         const t1 = d * 0.4;
         const t2 = d * 0.6;
+        // Для обычного исчезновения: выбираем 1 префаб на весь «ход/клик», а не по одному на тайл
+        const disappearPrefab = !playExplosion ? this.pickDisappearPrefabForInteraction() : null;
         const key = (r: number, c: number) => `${r},${c}`;
         const seen = new Set<string>();
         for (const [r, c] of cells) {
@@ -272,6 +298,11 @@ export default class BoardView extends cc.Component {
             const view = this.tileViews[r] && this.tileViews[r][c];
             if (!node || !node.isValid) continue;
             if (view && typeof view.stopBombIdle === 'function') view.stopBombIdle();
+            if (playExplosion) {
+                this.playExplosionAt(node.getPosition());
+            } else {
+                this.playDisappearAnimAt(node.getPosition(), disappearPrefab);
+            }
             node.stopAllActions();
             node.opacity = 255;
             node.runAction(cc.sequence(
@@ -294,6 +325,43 @@ export default class BoardView extends cc.Component {
         this.scheduleOnce(() => {
             if (onComplete) onComplete();
         }, d);
+    }
+
+    /** Воспроизвести префаб взрыва в заданной позиции (в локальных координатах this.node). */
+    private playExplosionAt(position: cc.Vec2): void {
+        if (!this.explosionPrefab || !this.node || !this.node.isValid) return;
+        const explosionNode = cc.instantiate(this.explosionPrefab);
+        explosionNode.setPosition(position);
+        explosionNode.zIndex = 50;
+        this.node.addChild(explosionNode);
+        const anim = explosionNode.getComponent(cc.Animation);
+        if (anim) anim.play();
+        const duration = this.explosionDuration > 0 ? this.explosionDuration : 0.37;
+        this.scheduleOnce(() => {
+            if (explosionNode && explosionNode.isValid) explosionNode.destroy();
+        }, duration);
+    }
+
+    /** Выбрать 1 префаб исчезновения для текущего взаимодействия (один клик → один префаб на всю группу). */
+    private pickDisappearPrefabForInteraction(): cc.Prefab | null {
+        const prefabs = (this.disappearAnimPrefabs || []).filter((p): p is cc.Prefab => p != null);
+        if (prefabs.length === 0) return null;
+        return prefabs[Math.floor(Math.random() * prefabs.length)];
+    }
+
+    /** Воспроизвести анимацию исчезновения обычных тайлов в заданной позиции (одинаковый prefab на всю группу). */
+    private playDisappearAnimAt(position: cc.Vec2, prefab: cc.Prefab | null): void {
+        if (!prefab || !this.node || !this.node.isValid) return;
+        const animNode = cc.instantiate(prefab);
+        animNode.setPosition(position);
+        animNode.zIndex = 45;
+        this.node.addChild(animNode);
+        const anim = animNode.getComponent(cc.Animation);
+        if (anim) anim.play();
+        const duration = this.disappearAnimDuration > 0 ? this.disappearAnimDuration : 0.3;
+        this.scheduleOnce(() => {
+            if (animNode && animNode.isValid) animNode.destroy();
+        }, duration);
     }
 
     /** Подсветить ячейки (или сбросить подсветку: cells=[], highlight=false — все в 255). */
