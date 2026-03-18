@@ -94,6 +94,20 @@ export default class BoardView extends cc.Component {
 
     private buildGrid(): void {
         this.clearGrid();
+        this.populateGridNodes();
+    }
+
+    /**
+     * Полностью пересоздать узлы тайлов по текущему состоянию доски.
+     * Вызывается после сжигания + гравитации + дозаполнения — устраняет «залипание» тайлов из-за анимаций на старых узлах.
+     */
+    rebuildGridFromBoard(): void {
+        this.clearGrid();
+        this.populateGridNodes();
+        this.lastGridSnapshot = this.board ? this.board.getGridSnapshot() : null;
+    }
+
+    private populateGridNodes(): void {
         if (!this.board) return;
         const rows = this.board.getRows();
         const cols = this.board.getCols();
@@ -103,7 +117,6 @@ export default class BoardView extends cc.Component {
         const h = this.node.height || totalH;
         const anchorX = this.node.anchorX != null ? this.node.anchorX : 0.5;
         const anchorY = this.node.anchorY != null ? this.node.anchorY : 0.5;
-        // При якоре (0.5, 0.5) центр узла в (0,0) — сетку центрируем в (0,0). При (0,0) центр узла в (w/2, h/2).
         const centerX = anchorX === 0.5 ? 0 : w / 2;
         const centerY = anchorY === 0.5 ? 0 : h / 2;
         const startX = centerX - totalW / 2 + this.tileSize / 2;
@@ -123,7 +136,6 @@ export default class BoardView extends cc.Component {
                 if (tv) this.tileViews[r][c] = tv;
             }
         }
-        // Запуск idle для бомб после добавления узлов в сцену (чтобы анимация работала и при старте игры)
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
                 const value = this.board.getAt(r, c);

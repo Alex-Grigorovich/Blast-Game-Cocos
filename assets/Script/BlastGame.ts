@@ -397,7 +397,8 @@ export default class BlastGame extends cc.Component {
     private applyGravityAndRefill(): void {
         this.board.applyGravity();
         this.board.refill();
-        this.boardView.refresh();
+        // Пересборка узлов вместо refresh — каждый тайл новый узел, без «залипших» scale/opacity/анимаций после взрыва.
+        this.boardView.rebuildGridFromBoard();
         this.inputBlocked = false;
         this.selectedForSwap = null;
         this.boosterMode = 'none';
