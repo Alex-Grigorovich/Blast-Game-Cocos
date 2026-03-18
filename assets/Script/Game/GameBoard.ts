@@ -25,10 +25,13 @@ export class GameBoard {
     getCols(): number { return this.cols; }
     getColors(): number { return this.colors; }
 
-    /** Значение в ячейке: -1 пусто, 0..4 цвет, 5..8 спецтайл */
+    /** Значение в ячейке: -1 пусто, 0..4 цвет, 5..10 спецтайл. Всегда число (на случай случайной строки в сетке). */
     getAt(row: number, col: number): BoardValue {
         if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return -1;
-        return this.grid[row][col] as BoardValue;
+        const v = this.grid[row][col];
+        if (v == null) return -1;
+        const n = typeof v === 'number' && !isNaN(v) ? v : Number(v);
+        return (isNaN(n) ? -1 : Math.floor(n)) as BoardValue;
     }
 
     isNormal(value: number): boolean { return value >= 0 && value <= 4; }
@@ -39,7 +42,8 @@ export class GameBoard {
 
     setAt(row: number, col: number, value: number): void {
         if (row >= 0 && row < this.rows && col >= 0 && col < this.cols) {
-            this.grid[row][col] = value;
+            const n = typeof value === 'number' && !isNaN(value) ? value : Number(value);
+            this.grid[row][col] = Math.floor(n);
         }
     }
 
@@ -79,15 +83,19 @@ export class GameBoard {
 
     /**
      * Найти связную группу того же цвета (только обычные тайлы 0..4). Используется для hasValidMove и др.
+     * Сравнение цвета через число, чтобы не ломаться при случайном приведении типов (например "2" и 2).
      */
     getConnectedGroup(row: number, col: number): Cell[] {
-        const color = this.getAt(row, col);
+        const raw = this.getAt(row, col);
+        const color = typeof raw === 'number' && !isNaN(raw) ? raw : Number(raw);
         if (!this.isNormal(color)) return [];
         const group: Cell[] = [];
         const visited = new Set<string>();
         const key = (r: number, c: number) => `${r},${c}`;
         const dfs = (r: number, c: number) => {
-            if (this.getAt(r, c) !== color) return;
+            const cellRaw = this.getAt(r, c);
+            const cellColor = typeof cellRaw === 'number' && !isNaN(cellRaw) ? cellRaw : Number(cellRaw);
+            if (cellColor !== color) return;
             const k = key(r, c);
             if (visited.has(k)) return;
             visited.add(k);

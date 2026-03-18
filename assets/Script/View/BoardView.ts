@@ -14,20 +14,9 @@ const TILE_FRAME_COUNT = 11;
 /** Категории спрайтов для GameDesk: обычные тайлы и типы бомб */
 @ccclass
 export default class BoardView extends cc.Component {
-    @property(cc.Prefab)
-    tilePrefab: cc.Prefab = null;
-
-    /** Отдельный префаб для тайлов-бомб (ракета Г/В, бомба, бомба-макс). Если задан — для значений 5–8 создаётся он вместо tilePrefab. */
+    /** Отдельный префаб для тайлов-бомб (ракета Г/В, бомба, бомба-макс). Если задан — для значений 5–8 создаётся он. */
     @property(cc.Prefab)
     bombTilePrefab: cc.Prefab = null;
-
-    @property(cc.SpriteFrame)
-    tileSpriteFrame: cc.SpriteFrame = null;
-
-    // --- Категория: обычные тайлы (5 цветов) ---
-    /** Обычные тайлы: массив из 5 спрайтов по цветам (0 красный, 1 зелёный, 2 синий, 3 жёлтый, 4 сиреневый). Если пусто — используется tileFrames[0..4] или tileSpriteFrame. */
-    @property([cc.SpriteFrame])
-    ordinaryFrames: cc.SpriteFrame[] = [];
 
     // --- Категория: бомба (радиусная 3×3) ---
     /** Бомба: спрайт для обычной бомбы (радиус 3×3). Если не задан — используется tileFrames[7]. */
@@ -95,18 +84,7 @@ export default class BoardView extends cc.Component {
         this.onClick = onTileClick;
         // При новом поле сбрасываем снапшот, чтобы первая перерисовка не анимировала всё как «падение»
         this.lastGridSnapshot = this.board ? this.board.getGridSnapshot() : null;
-        const self = this;
-        const doBuild = () => {
-            if (!self.tileSpriteFrame && (!self.tileFrames || self.tileFrames.length === 0)) {
-                cc.loader.loadRes('Texture/singleColor', cc.SpriteFrame, (err: Error, frame: cc.SpriteFrame) => {
-                    if (!err && frame) self.tileSpriteFrame = frame;
-                    self.buildGrid();
-                });
-            } else {
-                self.buildGrid();
-            }
-        };
-        this.scheduleOnce(doBuild, 0);
+        this.scheduleOnce(() => this.buildGrid(), 0);
     }
 
     /** Синхронизировать внутренний снапшот с текущим состоянием поля (например, после полного рестарта игры). */
@@ -157,19 +135,24 @@ export default class BoardView extends cc.Component {
         }
     }
 
-    /** Выбор спрайта по значению тайла: сначала категории (обычные, бомба, бомба Г/В), затем tileFrames по индексу. */
+    /** Любой кадр, подходящий для бомб (5–8), чтобы не подставлять обычный цветной тайл. */
+    private getAnyBombFrame(): cc.SpriteFrame | null {
+        return this.bombFrame || this.bombHorizontalFrame || this.bombVerticalFrame
+            || (this.tileFrames && (this.tileFrames[5] || this.tileFrames[6] || this.tileFrames[7] || this.tileFrames[8]))
+            || null;
+    }
+
+    /** Выбор спрайта по значению тайла: категории бомб, затем tileFrames по индексу. Для бомб fallback только из бомб-кадров. */
     private getFrameForValue(value: number): cc.SpriteFrame | null {
         if (value < 0 || value >= TILE_FRAME_COUNT) return null;
         if (value >= 0 && value < GameConfig.COLORS) {
-            if (this.ordinaryFrames && this.ordinaryFrames[value]) return this.ordinaryFrames[value];
-            if (this.tileFrames && this.tileFrames[value]) return this.tileFrames[value];
-            return this.tileSpriteFrame || null;
+            return (this.tileFrames && this.tileFrames[value]) || null;
         }
-        if (value === GameConfig.TILE_ROCKET_H) return this.bombHorizontalFrame || (this.tileFrames && this.tileFrames[5]) || null;
-        if (value === GameConfig.TILE_ROCKET_V) return this.bombVerticalFrame || (this.tileFrames && this.tileFrames[6]) || null;
-        if (value === GameConfig.TILE_BOMB) return this.bombFrame || (this.tileFrames && this.tileFrames[7]) || null;
-        if (this.tileFrames && this.tileFrames[value]) return this.tileFrames[value];
-        return this.tileSpriteFrame || null;
+        if (value === GameConfig.TILE_ROCKET_H) return this.bombHorizontalFrame || (this.tileFrames && this.tileFrames[5]) || this.getAnyBombFrame();
+        if (value === GameConfig.TILE_ROCKET_V) return this.bombVerticalFrame || (this.tileFrames && this.tileFrames[6]) || this.getAnyBombFrame();
+        if (value === GameConfig.TILE_BOMB) return this.bombFrame || (this.tileFrames && this.tileFrames[7]) || this.getAnyBombFrame();
+        if (value >= GameConfig.TILE_ROCKET_H && value <= GameConfig.TILE_BOMB_MAX) return (this.tileFrames && this.tileFrames[value]) || this.getAnyBombFrame();
+        return (this.tileFrames && this.tileFrames[value]) || null;
     }
 
     private getColorForValue(value: number): cc.Color {
@@ -178,9 +161,7 @@ export default class BoardView extends cc.Component {
     }
 
     private getAnyTileFrame(): cc.SpriteFrame | null {
-        return this.tileSpriteFrame
-            || (this.ordinaryFrames && this.ordinaryFrames[0])
-            || (this.tileFrames && this.tileFrames[0])
+        return (this.tileFrames && this.tileFrames[0])
             || (this.bombFrame || this.bombHorizontalFrame || this.bombVerticalFrame)
             || null;
     }
@@ -191,8 +172,6 @@ export default class BoardView extends cc.Component {
         let node: cc.Node;
         if (useBombPrefab) {
             node = cc.instantiate(this.bombTilePrefab);
-        } else if (this.tilePrefab) {
-            node = cc.instantiate(this.tilePrefab);
         } else {
             node = new cc.Node('Tile');
             node.setContentSize(this.tileSize, this.tileSize);
@@ -213,16 +192,32 @@ export default class BoardView extends cc.Component {
         node.setContentSize(this.tileSize, this.tileSize);
         const tv = node.getComponent(TileView) || node.addComponent(TileView);
         if (!tv.sprite && node.getComponent(cc.Sprite)) (tv as any).sprite = node.getComponent(cc.Sprite);
-        tv.init(row, col, value, (r, c) => this.onClick && this.onClick(r, c));
-        const frame = this.getFrameForValue(value) || this.getAnyTileFrame();
-        // Обычные тайлы (0–4): без тинта — цвет берётся из спрайта, иначе затемнение (синий, красный и т.д.)
+        const onClick = (r: number, c: number) => this.onClick && this.onClick(r, c);
+        let frame = this.getFrameForValue(value);
+        if (!frame) frame = (value >= GameConfig.TILE_ROCKET_H && value <= GameConfig.TILE_BOMB_MAX) ? this.getAnyBombFrame() : this.getAnyTileFrame();
         const color = value >= 0 && value <= 4 ? cc.color(255, 255, 255) : undefined;
-        tv.setDisplay(value, frame, color);
+        // Инициализируем все TileView в узле и в детях (префаб может иметь TileView на дочернем узле — тогда клик приходит туда).
+        this.initAllTileViewsInNode(node, row, col, value, onClick, frame, color);
         if (isBombIdleType(value)) tv.setBombIdle(this.bombIdleInterval, this.bombIdleAnimDuration);
         else tv.stopBombIdle();
         this.tileViews[row] = this.tileViews[row] || [];
         this.tileViews[row][col] = tv;
         return node;
+    }
+
+    /** Инициализировать все TileView в узле и в детях (чтобы клик по любому дочернему узлу префаба работал). */
+    private initAllTileViewsInNode(
+        node: cc.Node, row: number, col: number, value: number,
+        onClick: (r: number, c: number) => void, frame: cc.SpriteFrame | null, color: cc.Color | undefined
+    ): void {
+        if (!node || !node.isValid) return;
+        const tv = node.getComponent(TileView);
+        if (tv) {
+            tv.init(row, col, value, onClick);
+            tv.setDisplay(value, frame, color);
+        }
+        const children = node.children;
+        for (let i = 0; i < children.length; i++) this.initAllTileViewsInNode(children[i], row, col, value, onClick, frame, color);
     }
 
     private clearGrid(): void {
@@ -244,27 +239,36 @@ export default class BoardView extends cc.Component {
         const cols = this.board.getCols();
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
+                const value = this.board.getAt(r, c);
+                // Сбрасываем всегда корневой узел ячейки (tileNodes): анимация взрыва вешается на него, а view.node может быть дочерним — иначе корень остаётся с scale/opacity от анимации и тайл «залипает».
+                const node = this.tileNodes[r] && this.tileNodes[r][c];
+                if (node && node.isValid) {
+                    node.active = value >= 0;
+                    if (value >= 0) {
+                        node.stopAllActions();
+                        node.scale = 1;
+                        node.opacity = 255;
+                    }
+                }
+                if (value < 0) continue;
                 const view = this.tileViews[r] && this.tileViews[r][c];
                 if (view) {
-                    const value = this.board.getAt(r, c);
-                    view.node.active = value >= 0;
-                    if (value < 0) continue;
-                    view.node.scale = 1;
-                    view.node.opacity = 255;
-                    const frame = this.getFrameForValue(value);
+                    let frame = this.getFrameForValue(value);
+                    if (value >= GameConfig.TILE_ROCKET_H && value <= GameConfig.TILE_BOMB_MAX && !frame) {
+                        frame = this.getAnyBombFrame();
+                    }
                     const color = value >= 0 && value <= 4 ? cc.color(255, 255, 255) : undefined;
                     view.setDisplay(value, frame, color);
                     if (isBombIdleType(value)) view.setBombIdle(this.bombIdleInterval, this.bombIdleAnimDuration);
                     else view.stopBombIdle();
 
-                    // Плавное появление/«падение» тайлов: если значение изменилось или была пустота, слегка масштабируем с ease-out
-                    if (this.lastGridSnapshot) {
+                    // Плавное появление/«падение» тайлов
+                    if (this.lastGridSnapshot && node && node.isValid) {
                         const prev = this.lastGridSnapshot[r][c];
-                        if (prev !== value && value >= 0 && view.node && view.node.isValid) {
-                            const n = view.node;
-                            n.stopAllActions();
-                            n.scale = 0.7;
-                            n.runAction(cc.scaleTo(0.12, 1).easing(cc.easeBackOut()));
+                        if (prev !== value && value >= 0) {
+                            node.stopAllActions();
+                            node.scale = 0.7;
+                            node.runAction(cc.scaleTo(0.12, 1).easing(cc.easeBackOut()));
                         }
                     }
                 }

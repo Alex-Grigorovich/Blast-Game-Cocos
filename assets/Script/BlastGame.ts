@@ -2,6 +2,7 @@ const { ccclass, property } = cc._decorator;
 import { GameBoard } from './Game/GameBoard';
 import { GameState } from './Game/GameState';
 import { GameConfig } from './Game/GameConfig';
+import { GameSettings } from './Game/GameSettings';
 import BoardView from './View/BoardView';
 import GameUI from './View/GameUI';
 
@@ -31,6 +32,45 @@ export default class BlastGame extends cc.Component {
     @property(cc.Node)
     loseRestartBtn: cc.Node = null;
 
+    /** Кнопка «В меню» в панели победы. При клике загружается сцена меню. */
+    @property(cc.Node)
+    winMenuBtn: cc.Node = null;
+
+    /** Кнопка «В меню» в панели поражения. При клике загружается сцена меню. */
+    @property(cc.Node)
+    loseMenuBtn: cc.Node = null;
+
+    /** Имя сцены меню для перехода по кнопкам «В меню» (например MenuScene). */
+    @property({ tooltip: 'Имя сцены меню для кнопок «В меню»' })
+    menuSceneName: string = 'MenuScene';
+
+    /** Фоновая музыка при игре. Поддерживаемые форматы: .mp3, .ogg, .wav (см. README_SETUP). Загрузите файл в проект и перетащите сюда AudioClip. */
+    @property(cc.AudioClip)
+    bgMusicClip: cc.AudioClip = null;
+
+    /** Громкость фоновой музыки (0..1). По умолчанию 0.6. */
+    @property({ range: [0, 1], step: 0.1, tooltip: 'Громкость фоновой музыки 0–1' })
+    bgMusicVolume: number = 0.6;
+
+    /** Звук при успешном сжигании группы тайлов (совпадение по цвету). */
+    @property(cc.AudioClip)
+    soundMatchClip: cc.AudioClip = null;
+    /** Звук взрыва: один и тот же для бомб/ракет на поле и для бустера-бомбы. */
+    @property(cc.AudioClip)
+    soundExplosionClip: cc.AudioClip = null;
+    /** Звук телепорта — только при использовании бустера «Телепорт» (обмен двух тайлов по кнопке). */
+    @property(cc.AudioClip)
+    soundTeleportClip: cc.AudioClip = null;
+    /** Звук при показе меню победы. */
+    @property(cc.AudioClip)
+    soundWinClip: cc.AudioClip = null;
+    /** Звук при показе меню поражения. */
+    @property(cc.AudioClip)
+    soundLoseClip: cc.AudioClip = null;
+    /** Громкость звуковых эффектов (0..1). По умолчанию 1. */
+    @property({ range: [0, 1], step: 0.1, tooltip: 'Громкость эффектов 0–1' })
+    soundEffectsVolume: number = 1;
+
     /** Скорость изменения масштаба при наведении/уходе мыши с кнопок бустеров (сек). При наведении — 1.5, при уходе — 1. */
     @property({ tooltip: 'Длительность перехода масштаба (сек)' })
     boosterHoverPulseDuration: number = 0.15;
@@ -47,6 +87,36 @@ export default class BlastGame extends cc.Component {
         this.startNewGame();
         this.registerBoosterButtons();
         this.registerRestartButtons();
+        this.registerMenuButtons();
+        this.playBackgroundMusic();
+        // При первом запуске сцены (не при рестарте) один тайл иногда не реагирует — через небольшую задержку принудительно обновляем вид и разблокируем ввод.
+        this.scheduleOnce(() => {
+            if (this.boardView && this.board) {
+                this.boardView.refresh();
+                this.inputBlocked = false;
+            }
+        }, 0.2);
+    }
+
+    onDestroy(): void {
+        if (cc.audioEngine) cc.audioEngine.stopMusic();
+    }
+
+    /** Запуск фоновой музыки (зацикленной). Учитывает настройки из Option (GameSettings). */
+    private playBackgroundMusic(): void {
+        if (!this.bgMusicClip || !cc.audioEngine) return;
+        cc.audioEngine.playMusic(this.bgMusicClip, true);
+        const vol = GameSettings.isMuted() ? 0 : Math.max(0, Math.min(1, GameSettings.getMusicVolume()));
+        cc.audioEngine.setMusicVolume(vol);
+    }
+
+    /** Воспроизвести звуковой эффект (один раз). Учитывает настройки из Option (GameSettings). */
+    private playSound(clip: cc.AudioClip | null): void {
+        if (!clip || !cc.audioEngine) return;
+        if (GameSettings.isMuted()) return;
+        const vol = Math.max(0, Math.min(1, GameSettings.getSoundVolume() * this.soundEffectsVolume));
+        cc.audioEngine.setEffectsVolume(vol);
+        cc.audioEngine.playEffect(clip, false);
     }
 
     private runBoosterHoverEnter(node: cc.Node): void {
@@ -91,6 +161,21 @@ export default class BlastGame extends cc.Component {
         };
         setup(this.winRestartBtn);
         setup(this.loseRestartBtn);
+    }
+
+    /** Подключить кнопки «В меню» в панелях победы и поражения — переход на сцену меню. */
+    private registerMenuButtons(): void {
+        const goToMenu = (): void => {
+            if (this.menuSceneName) cc.director.loadScene(this.menuSceneName);
+        };
+        const setup = (node: cc.Node): void => {
+            if (!node || !node.isValid) return;
+            if (node.getComponent(cc.Button) == null) node.addComponent(cc.Button);
+            node.off(cc.Node.EventType.TOUCH_END, goToMenu, this);
+            node.on(cc.Node.EventType.TOUCH_END, goToMenu, this);
+        };
+        setup(this.winMenuBtn);
+        setup(this.loseMenuBtn);
     }
 
     startNewGame(): void {
@@ -155,14 +240,16 @@ export default class BlastGame extends cc.Component {
         if (value < 0) return;
 
         // --- Бустеры под заголовком «Бустеры» (кнопки): работают отдельно от спецтайлов на поле ---
-        // UI «Бустер бомба»: уже активирован (счётчик списан при клике по кнопке), по клику по полю — сжигаем в радиусе R
+        // UI «Бустер бомба»: уже активирован (счётчик списан при клике по кнопке), по клику по полю — сжигаем в радиусе R. Блокируем ввод до завершения анимации и refresh (как у ракет/бомб), чтобы тайлы не «залипали».
         if (this.boosterMode === 'bomb') {
+            this.inputBlocked = true;
             const initial = this.board.getBombEffectCells(row, col, GameConfig.BOMB_RADIUS);
             const cells = this.board.getCellsWithChainReaction(initial);
             const count = this.board.burnCells(cells);
             this.state.addScore(count * GameConfig.scorePerTile);
             this.boosterMode = 'none';
             if (this.gameUI) this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
+            this.playSound(this.soundExplosionClip);
             this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill(), true);
             return;
         }
@@ -189,6 +276,7 @@ export default class BlastGame extends cc.Component {
                 // Не return — дальше обработается как клик по ракете/бомбе/обычной группе
             } else {
                 this.board.swap(this.selectedForSwap[0], this.selectedForSwap[1], row, col);
+                if (this.teleportSource === 'ui') this.playSound(this.soundTeleportClip);
                 if (this.teleportSource === 'tile') this.state.useMove();
                 this.selectedForSwap = null;
                 this.boosterMode = 'none';
@@ -232,6 +320,7 @@ export default class BlastGame extends cc.Component {
                 this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
                 this.gameUI.setMoves(this.state.movesLeft);
             }
+            this.playSound(this.soundExplosionClip);
             this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill(), true);
             return;
         }
@@ -252,6 +341,7 @@ export default class BlastGame extends cc.Component {
                 this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
                 this.gameUI.setMoves(this.state.movesLeft);
             }
+            this.playSound(this.soundExplosionClip);
             this.boardView.playBurnAnimation(cells, () => this.applyGravityAndRefill(), true);
             return;
         }
@@ -300,6 +390,7 @@ export default class BlastGame extends cc.Component {
             this.gameUI.updateScore(this.state.score, GameConfig.TARGET_SCORE);
             this.gameUI.setMoves(this.state.movesLeft);
         }
+        this.playSound(this.soundMatchClip);
         this.boardView.playBurnAnimation(group, () => this.applyGravityAndRefill());
     }
 
@@ -312,14 +403,18 @@ export default class BlastGame extends cc.Component {
         this.boosterMode = 'none';
         this.teleportSource = null;
         this.checkWinLose();
+        // Страховка: повторно разблокировать ввод после короткой задержки (на случай рассинхрона после анимации/взрыва).
+        this.scheduleOnce(() => { this.inputBlocked = false; }, 0.05);
     }
 
     private checkWinLose(): void {
         if (this.state.result === 'win') {
+            this.playSound(this.soundWinClip);
             if (this.gameUI) this.gameUI.showWin();
             return;
         }
         if (this.state.result === 'lose') {
+            this.playSound(this.soundLoseClip);
             if (this.gameUI) this.gameUI.showLose();
             return;
         }

@@ -22,6 +22,10 @@ export default class MainMenu extends cc.Component {
     @property({ tooltip: 'Имя сцены игры для перехода по PLAY' })
     gameSceneName: string = 'GameScene';
 
+    /** Имя сцены настроек для перехода по OPTIONS. */
+    @property({ tooltip: 'Имя сцены настроек для перехода по OPTIONS' })
+    optionSceneName: string = 'Option';
+
     onLoad(): void {
         this.registerButton(this.playBtn, this.onPlay);
         this.registerButton(this.optionsBtn, this.onOptions);
@@ -40,8 +44,7 @@ export default class MainMenu extends cc.Component {
     }
 
     private onOptions(): void {
-        // Заглушка: можно открыть панель настроек или отдельную сцену
-        cc.log('Options');
+        if (this.optionSceneName) cc.director.loadScene(this.optionSceneName);
     }
 
     private onQuit(): void {

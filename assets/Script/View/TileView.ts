@@ -106,6 +106,8 @@ export default class TileView extends cc.Component {
     }
 
     private onTouchEnd(): void {
-        if (this._tileValue >= 0 && this._onClick) this._onClick(this._row, this._col);
+        // Всегда передаём клик по координатам — актуальное состояние ячейки проверяет BlastGame по доске.
+        // Иначе при рассинхроне _tileValue (после взрыва/анимации) тайл переставал бы реагировать.
+        if (this._onClick) this._onClick(this._row, this._col);
     }
 }
